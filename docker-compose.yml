@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: ghcr.io/shuffle/shuffle-frontend:latest
+    container_name: shuffle-frontend
+    hostname: shuffle-frontend
+    ports:
+      - "3001:80"
+      - "3443:443"
+    environment:
+      - BACKEND_HOSTNAME=backend
+    networks:
+      - shuffle
+    restart: unless-stopped
+
+  backend:
+    image: ghcr.io/shuffle/shuffle-backend:latest
+    container_name: shuffle-backend
+    hostname: shuffle-backend
+    ports:
+      - "5001:5001"
+    environment:
+      - SHUFFLE_APP_HOTLOAD_FOLDER=/shuffle-apps
+      - SHUFFLE_FILE_LOCATION=/shuffle-files
+      # Add this line to force plain HTTP connection:
+      - SHUFFLE_OPENSEARCH_URL=http://shuffle-opensearch:9200
+    volumes:
+      - ./shuffle-apps:/shuffle-apps
+      - ./shuffle-files:/shuffle-files
+    networks:
+      - shuffle
+    restart: unless-stopped
+
+  orborus:
+    image: ghcr.io/shuffle/shuffle-orborus:latest
+    container_name: shuffle-orborus
+    hostname: shuffle-orborus
+    environment:
+      - SHUFFLE_APP_HOTLOAD_FOLDER=/shuffle-apps
+      - BASE_URL=http://backend:5001
+      - DOCKER_API_VERSION=1.40
+      - CLEANUP=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - shuffle
+    restart: unless-stopped
+
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: shuffle-opensearch
+    hostname: shuffle-opensearch
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - bootstrap.memory_lock=false
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - DISABLE_SECURITY_PLUGIN=true
+      - discovery.type=single-node
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      # Switched from ./shuffle-database to a Docker-managed named volume:
+      - opensearch_data:/usr/share/opensearch/data
+    networks:
+      - shuffle
+    restart: unless-stopped
+
+volumes:
+  opensearch_data:
+    driver: local
+
+networks:
+  shuffle:
+    driver: bridge
